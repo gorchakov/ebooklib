@@ -375,6 +375,56 @@ class EpubHtml(EpubItem):
         if item.get_type() == ebooklib.ITEM_SCRIPT:
             self.add_link(src=item.get_name(), type="text/javascript")
 
+    def _merge_prefixes(self, template_prefix, original_prefix):
+        """
+        Merge two epub:prefix strings, combining unique prefix pairs.
+        
+        Args:
+            template_prefix: Prefix string from template (e.g., "z3998: http://...")
+            original_prefix: Prefix string from original content (e.g., "z3998: http://..., se: https://...")
+        
+        Returns:
+            Merged prefix string with all unique prefixes
+        """
+        if not template_prefix and not original_prefix:
+            return None
+        
+        if not original_prefix:
+            return template_prefix
+        
+        if not template_prefix:
+            return original_prefix
+        
+        # Parse both prefix strings into dictionaries
+        def parse_prefix_string(prefix_str):
+            """Parse prefix string into dict of name -> uri."""
+            prefixes = {}
+            if not prefix_str:
+                return prefixes
+            # Split by comma and parse each pair
+            for part in prefix_str.split(','):
+                part = part.strip()
+                if ':' in part:
+                    name, uri = part.split(':', 1)
+                    name = name.strip()
+                    uri = uri.strip()
+                    if name and uri:
+                        prefixes[name] = uri
+            return prefixes
+        
+        template_dict = parse_prefix_string(template_prefix)
+        original_dict = parse_prefix_string(original_prefix)
+        
+        # Merge: original takes precedence for duplicates
+        merged = dict(template_dict)
+        merged.update(original_dict)
+        
+        # Convert back to string format
+        if not merged:
+            return None
+        
+        return ', '.join("{name}: {uri}".format(name=name, uri=uri) for name, uri in sorted(merged.items()))
+
     def get_body_content(self):
         """
         Returns content of BODY element for this HTML document. Content will be of type 'str' (Python 2)
@@ -422,7 +472,7 @@ class EpubHtml(EpubItem):
         tree_root = tree.getroot()
 
         # PRESERVE epub:prefix from template if it exists
-        epub_prefix = tree_root.get("{%s}prefix" % NAMESPACES["EPUB"])
+        template_prefix = tree_root.get("{%s}prefix" % NAMESPACES["EPUB"])
 
         tree_root.set("lang", self.lang or self.book.language)
         tree_root.attrib["{%s}lang" % NAMESPACES["XML"]] = self.lang or self.book.language  # noqa
@@ -435,7 +485,19 @@ class EpubHtml(EpubItem):
         except Exception:
             return six.b("")
 
-        _html_root = html_tree.getroottree()
+        # EXTRACT epub:prefix from original content if it exists
+        # parse_html_string returns the root element directly, not a tree
+        original_html_root = html_tree
+        # parse_html_string stores namespace attributes with colons (e.g., "epub:prefix")
+        # not as namespaced keys, so we need to check both ways
+        original_prefix = original_html_root.get("{%s}prefix" % NAMESPACES["EPUB"])
+        if not original_prefix:
+            # Try getting it as "epub:prefix" (how HTML parser stores it)
+            original_prefix = original_html_root.attrib.get("epub:prefix")
+
+        # MERGE prefixes: combine template prefix with original content prefix
+        # This ensures custom prefixes from the original content are preserved
+        epub_prefix = self._merge_prefixes(template_prefix, original_prefix)
 
         # create and populate head
 
@@ -476,7 +538,7 @@ class EpubHtml(EpubItem):
             for i in body.getchildren():
                 _body.append(i)
 
-        # RESTORE epub:prefix if it was in the template
+        # RESTORE merged epub:prefix (from template and/or original content)
         if epub_prefix:
             tree_root.set("{%s}prefix" % NAMESPACES["EPUB"], epub_prefix)
 
