@@ -421,6 +421,9 @@ class EpubHtml(EpubItem):
         tree = parse_string(self.book.get_template(self._template_name))
         tree_root = tree.getroot()
 
+        # PRESERVE epub:prefix from template if it exists
+        epub_prefix = tree_root.get("{%s}prefix" % NAMESPACES["EPUB"])
+
         tree_root.set("lang", self.lang or self.book.language)
         tree_root.attrib["{%s}lang" % NAMESPACES["XML"]] = self.lang or self.book.language  # noqa
 
@@ -472,6 +475,10 @@ class EpubHtml(EpubItem):
         if body is not None:
             for i in body.getchildren():
                 _body.append(i)
+
+        # RESTORE epub:prefix if it was in the template
+        if epub_prefix:
+            tree_root.set("{%s}prefix" % NAMESPACES["EPUB"], epub_prefix)
 
         tree_str = etree.tostring(tree, pretty_print=True, encoding="utf-8", xml_declaration=True)
 
