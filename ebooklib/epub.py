@@ -518,13 +518,16 @@ class EpubHtml(EpubItem):
             else:
                 _lnk = etree.SubElement(_head, "link", lnk)
 
-        # this should not be like this
-        # head = html_root.find('head')
-        # if head is not None:
-        #     for i in head.getchildren():
-        #         if i.tag == 'title' and self.title != '':
-        #             continue
-        #         _head.append(i)
+        # Copy head elements from original HTML (like styles)
+        # Skip title only if it was configured separately via self.title
+        head = html_tree.find("head")
+        if head is not None:
+            for i in head.getchildren():
+                # Skip title only if we've set one separately
+                if i.tag == "title" and self.title != "":
+                    continue
+                # Append element (lxml handles element ownership automatically)
+                _head.append(i)
 
         # create and populate body
 
